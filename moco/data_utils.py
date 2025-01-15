@@ -95,7 +95,7 @@ def sample_tsp(key, problem_size):
     coordinates = jax.random.uniform(key, shape=(problem_size, 2))
     return coordinates
 
-def load_data(path, batch_size, subset=None):
+def load_data(path, batch_size, subset=None, constraint_type='basic'):
     """Load a dataset from a .npy file.
     Args:
     path: path to the .npy file.
@@ -104,9 +104,39 @@ def load_data(path, batch_size, subset=None):
     Returns:
     dataset: a tf.data.Dataset containing the data.
     """
-    data = np.load(path)
-    if subset is not None:
-        data = data[subset]
+    if path.split('.')[-1]=='npy':
+        data = np.load(path)
+        if subset is not None:
+            data = data[subset]
+    elif path.split('.')[-1]=='txt':
+        file_lines = open(path).read().splitlines()
+        print(f'Loaded "{path}" with {len(file_lines)} lines')
+        
+        all_points = []
+        all_tours = []
+        all_constraints = []
+
+        for line in file_lines:
+            line = line.strip()
+            points_str = line.split(' output ')[0].strip()
+            points = points_str.split(' ')
+            points = np.array([[float(points[i]), float(points[i+1])] for i in range(0, len(points), 2)])
+            all_points.append(points)
+
+            # Extract tour
+            tour = line.split(' output ')[1].split(' ')
+            tour = np.array([int(t) for t in tour])
+            all_tours.append(tour)
+            
+            constraint = None
+            if constraint_type != 'basic':
+                # Extract constraint if not basic type
+                constraint = line.split(' output ')[2].split(' ')
+                constraint = np.array([float(t) for t in constraint])
+                all_constraints.append(constraint)
+                
+            data = np.array(all_points)    
+        
     dataset = tf.data.Dataset.from_tensor_slices(data).batch(batch_size)
     return dataset
 

@@ -5,3 +5,5 @@ logs/*
 __pycache__
 !*.gitkeep
 *.egg-info
+
+test*

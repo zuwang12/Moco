@@ -25,9 +25,9 @@ from learned_optimization.learned_optimizers import base as lopt_base, mlp_lopt
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", "-d", help="path to the data", type=str)
-    parser.add_argument("--task_batch_size", "-tb", help="batch size", type=int, default=64)
-    parser.add_argument("--batch_size_eval", "-be", help="batch size", type=int, default=64)
+    parser.add_argument("--data_path", "-d", default="./data/tsp/test-100-coords.npy", help="path to the data", type=str)
+    parser.add_argument("--task_batch_size", "-tb", help="batch size", type=int, default=32)
+    parser.add_argument("--batch_size_eval", "-be", help="batch size", type=int, default=1)
     parser.add_argument("--num_steps", "-n", help="number of training steps", type=int, default=200)
     parser.add_argument("--learning_rate", "-l", help="learning rate", type=float, default=1e-2)
     parser.add_argument("--seed", "-s", help="seed", type=int, default=random.randrange(sys.maxsize))
@@ -40,10 +40,13 @@ if __name__ == '__main__':
     parser.add_argument("--baseline", "-b", help="specify baseline for policy gradient calc", type=str, default=None, choices=[None, "avg"])
     parser.add_argument("--mlflow_uri", help="mlflow uri", type=str, default="logs")
     parser.add_argument("--experiment", help="experiment name", type=str, default="tsp")
-    parser.add_argument("--num_starting_nodes", "-ns", help="number of starting nodes", type=int, default=1)
-    parser.add_argument("--checkpoint_folder", "-cf", help="folder to load checkpoint from", type=str, default=None)
+    parser.add_argument("--num_starting_nodes", "-ns", help="number of starting nodes", type=int, default=32)
+    parser.add_argument("--checkpoint_folder", "-cf", help="folder to load checkpoint from", type=str, default="./checkpoints/tsp100_200_32")
     parser.add_argument("--two_opt_t_max", type=int, default=None)
     parser.add_argument("--first_accept", action="store_true")
+    parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--num_cities", type=int, default=20)
+    parser.add_argument("--constraint_type", type=str, default='basic')
     args = parser.parse_args()
     # pretty print arguments
     print("Arguments:")
@@ -54,6 +57,25 @@ if __name__ == '__main__':
     print("jax has gpu:", jax_has_gpu())
 
     key = jax.random.PRNGKey(args.seed)
+
+    date_per_type = {
+        'basic': '',
+        'box': '240710',
+        'path': '240711',
+        'cluster': '240721',
+    }
+
+    now = time.strftime('%y%m%d_%H%M%S')
+    if args.run_name is None:
+        args.run_name = f'test_{now}'
+
+    if args.constraint_type == 'basic':
+        args.data_path = f'./data/tsp{args.num_cities}_test_concorde.txt'
+        args.result_file_name = f'moco_tsp{args.num_cities}_{args.constraint_type}.csv'
+    else:
+        args.data_path = f'./data/tsp{args.num_cities}_{args.constraint_type}_constraint_{date_per_type.get(args.constraint_type)}.txt'
+        args.result_file_name = f'moco_tsp{args.num_cities}_{args.constraint_type}_constraint.csv'
+    print(f'Result file : ./Results/{args.result_file_name}')
 
     dataset = load_data(args.data_path, batch_size=args.batch_size_eval)
     _, problem_size, _ = dataset.element_spec.shape
