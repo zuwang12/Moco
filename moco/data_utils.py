@@ -14,6 +14,7 @@ from moco.mis_generation.random_graph import imap_unordered_bar
 import time
 from multiprocessing import Pool
 import tqdm
+from moco.utils_ddrl import calculate_distance_matrix2, calculate_indicator_matrix3, calculate_indicator_matrix4
 
 def load_and_process(filename):
     # print(f"Processing {filename}")
@@ -108,6 +109,9 @@ def load_data(path, batch_size, subset=None, constraint_type='basic'):
         data = np.load(path)
         if subset is not None:
             data = data[subset]
+        dataset = tf.data.Dataset.from_tensor_slices(data).batch(batch_size)
+        return dataset
+
     elif path.split('.')[-1]=='txt':
         file_lines = open(path).read().splitlines()
         print(f'Loaded "{path}" with {len(file_lines)} lines')
@@ -115,6 +119,7 @@ def load_data(path, batch_size, subset=None, constraint_type='basic'):
         all_points = []
         all_tours = []
         all_constraints = []
+        all_constraints_matrix = []
 
         for line in file_lines:
             line = line.strip()
@@ -133,12 +138,34 @@ def load_data(path, batch_size, subset=None, constraint_type='basic'):
                 # Extract constraint if not basic type
                 constraint = line.split(' output ')[2].split(' ')
                 constraint = np.array([float(t) for t in constraint])
-                all_constraints.append(constraint)
                 
-            data = np.array(all_points)    
+                if constraint_type == 'box':
+                    _, constraint_matrix = calculate_distance_matrix2(points, constraint)
+                elif constraint_type == 'cluster':
+                    constraint_matrix = calculate_indicator_matrix3(points, constraint)
+                elif constraint_type == 'path':
+                    constraint_matrix = calculate_indicator_matrix4(points, constraint)
+                    padded_constraint = -1000 * np.ones(20)
+                    padded_constraint[:len(constraint)] = constraint
+                    constraint = padded_constraint
+                    
+                constraint_matrix = constraint_matrix.reshape(-1)
+                all_constraints.append(constraint)
+                all_constraints_matrix.append(constraint_matrix)
         
-    dataset = tf.data.Dataset.from_tensor_slices(data).batch(batch_size)
-    return dataset
+        data = np.array(all_points)
+        data_tour = np.array(all_tours)
+        data_constraint = np.array(all_constraints)
+        data_constraint_matrix = np.array(all_constraints_matrix)
+        data_index = np.arange(len(data))
+        
+        dataset = tf.data.Dataset.from_tensor_slices(data).batch(batch_size)
+        tour = tf.data.Dataset.from_tensor_slices(data_tour).batch(batch_size)
+        constraint = tf.data.Dataset.from_tensor_slices(data_constraint).batch(batch_size)
+        constraint_matrix = tf.data.Dataset.from_tensor_slices(data_constraint_matrix).batch(batch_size)
+        sample_idx = tf.data.Dataset.from_tensor_slices(data_index).batch(batch_size)
+        
+        return dataset, tour, constraint, constraint_matrix, sample_idx
 
 # Adapted from https://github.com/deepmind/jraph/blob/master/jraph/ogb_examples/train.py
 def _nearest_bigger_power_of_two(x: int) -> int:

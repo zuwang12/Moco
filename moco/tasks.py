@@ -29,6 +29,8 @@ from moco.two_opt import two_opt_once, _two_opt_python, batched_two_opt_python, 
 class TspTaskParams:
     coordinates: Array
     starting_node: int
+    constraint_matrix: Optional[Array] = None
+    constraint_type: Optional[Any] = None
 
 @dataclass
 class ModelState:
@@ -37,6 +39,8 @@ class ModelState:
     top_k_rewards: Array
     top_k_solutions: Array
     step: Array
+    constraint_matrix: Optional[Any] = None
+    constraint_type: Optional[Any] = None
     # rolling_reward: Array
     # abusing the model state here to pass aux info to the optimizer since the optimizer doesnt get passed the auxs for some reason
 
@@ -46,9 +50,11 @@ class TspMetrics:
     mean_reward: Array
     best_reward: Array
     reward_std: Array
+    tours : Optional[Array] = None
+    logits: Optional[Array] = None
 
 class TspTaskFamily(tasks_base.TaskFamily):
-    def __init__(self, problem_size: int, batch_size: int, k: int, baseline: Optional[str] = None, causal: bool = False, meta_loss_type: str = 'best', top_k: int = 32, heatmap_init_strategy: str = 'constant', rollout_actor: str = 'softmax', two_opt_t_max: Optional[int] = None, first_accept: bool = True):
+    def __init__(self, problem_size: int, batch_size: int, k: int, baseline: Optional[str] = None, causal: bool = False, meta_loss_type: str = 'best', top_k: int = 32, heatmap_init_strategy: str = 'constant', rollout_actor: str = 'softmax', two_opt_t_max: Optional[int] = None, first_accept: bool = True, constraint_type = 'basic'):
         super().__init__()
         self.datasets = None
         self.problem_size = problem_size
@@ -66,6 +72,7 @@ class TspTaskFamily(tasks_base.TaskFamily):
         self.two_opt_t_max = two_opt_t_max # None or int, if not None, the rollout will be a two opt rollout with a maximum number of iterations
         self.first_accept = first_accept # acceptance criterion for two opt
         self.top_k = top_k
+        self.constraint_type = constraint_type
         assert top_k <= batch_size, "top k must be smaller equal to batch size, otherwise currently the relative gaps include -inf in the first step since not all top k solutions are filled"
     def __repr__(self) -> str:
         return f"TspTaskFamily_n{self.problem_size}_k{self.k}_b{self.batch_size}"
@@ -78,7 +85,7 @@ class TspTaskFamily(tasks_base.TaskFamily):
         problem_size = self.problem_size
         num_edges = self.problem_size * self.k
         k = self.k
-        heatmap_model = SparseHeatmapActor(problem_size=problem_size, num_edges=num_edges)
+        heatmap_model = SparseHeatmapActor(problem_size=problem_size, num_edges=num_edges, batch_constraint_matrix=task_params.constraint_matrix, constraint_type = self.constraint_type)
         env = CustomGraphTSP(k, generator=UniformGenerator(problem_size))
         batch_size = self.batch_size
         problem = task_params.coordinates
@@ -164,14 +171,17 @@ class TspTaskFamily(tasks_base.TaskFamily):
                     pgl = jax.vmap(entmax_policy_gradient_loss)(logits, actions, advantages, weights).mean(axis=0)
                 return pgl
             
-            def _compute_metrics(self, timesteps, pgl):
+            def _compute_metrics(self, timesteps, pgl, tours, logits):
                 weights = jnp.roll(timesteps.discount, 1).at[:,0].set(1.)
                 weighted_reward = (weights * timesteps.reward).sum(-1)
                 return TspMetrics(
-                        pgl=pgl, 
-                        mean_reward=weighted_reward.mean()*-1, 
-                        best_reward=weighted_reward.max()*-1, 
-                        reward_std= weighted_reward.std())
+                        pgl=pgl,
+                        mean_reward=weighted_reward.mean()*-1,
+                        best_reward=weighted_reward.max()*-1,
+                        reward_std=weighted_reward.std(),
+                        tours=tours,
+                        logits=logits
+                )
             
             def init_with_state(self, key: PRNGKey) -> Tuple[Params, ModelState]:
                 # initial state is mostly static so use numpy to create since we dont want to trace but evaluate at compile time and then reuse
@@ -311,7 +321,7 @@ class TspTaskFamily(tasks_base.TaskFamily):
                     )
 
                 if with_metrics:
-                    metrics = self._compute_metrics(timesteps, pgl)
+                    metrics = self._compute_metrics(timesteps, pgl, tours, logits)
                     return pgl, state, aux, metrics
                 else:
                     return pgl, state, aux

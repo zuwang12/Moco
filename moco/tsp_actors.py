@@ -21,13 +21,15 @@ class MisActor(nn.Module):
 
 	def __call__(self, obs):
 		logits = self.heatmap
-		logits = jnp.where(obs.action_mask, -jnp.inf, logits)
+		logits = jnp.where(obs.action_mask, -1e5, logits)
 		return logits
 
 class SparseHeatmapActor(nn.Module):
 	problem_size: int
 	num_edges: int
+	batch_constraint_matrix: Array  # 기본값이 없는 인자
 	scale: float = 1.0
+	constraint_type: str = 'basic'
 
 	def setup(self):
 		self.heatmap = self.param('heatmap',
@@ -41,12 +43,34 @@ class SparseHeatmapActor(nn.Module):
 		3. set logits to -inf at indices of visited nodes
 		"""
 		k = self.heatmap.shape[1]
-		logits = jnp.full((self.problem_size), -jnp.inf)
-		# idx = state.graph.receivers[state.graph.senders == state.position]
-		# alternative but probably not jit compatible because of the potentially variable shape
+		logits = jnp.full((self.problem_size), -1e5)
+
+		position = state.position
+  
 		idx = state.graph.receivers.reshape(self.problem_size, k)[state.position]
 		logits = logits.at[idx].set(self.heatmap[state.position])
-		logits = jnp.where(state.visited_mask == 1, -jnp.inf, logits)
+  
+		if self.constraint_type == 'box':
+			intersection_matrix = self.batch_constraint_matrix.reshape(self.problem_size, self.problem_size)
+			indicator = intersection_matrix[position] # 1 : obstacle, 0 : possible
+			logits = jnp.where(indicator == 1, -1e5, logits)
+   
+		if self.constraint_type == 'cluster':
+			intersection_matrix = self.batch_constraint_matrix.reshape(self.problem_size, self.problem_size)
+			indicator = intersection_matrix[position] # 1 : different cluster, 0 : same cluster
+			# logits =+ jnp.where(indicator == 0, 10 * logits.max(), 0)    ######################## (1)
+			# logits = jnp.where(indicator == 0, 10*logits.max(), logits)  ######################## (2)
+			# logits = jnp.where(indicator == 0, 1e5, logits)              ######################## (3)
+			logits = jnp.where(indicator == 1, -1e5, logits)             ######################## (4)
+   
+  
+		if self.constraint_type == 'path':
+			intersection_matrix = self.batch_constraint_matrix.reshape(self.problem_size, self.problem_size)
+			indicator = intersection_matrix[position] # 1 : not defined, 0 : pre defined
+			logits = jnp.where(indicator == 0, 1e5, logits)
+   
+		logits = jnp.where(state.visited_mask == 1, -1e5, logits)
+
 		return logits
 
 class HeatmapActor(nn.Module):
@@ -61,7 +85,7 @@ class HeatmapActor(nn.Module):
 	@nn.compact
 	def __call__(self, state):
 		logits = self.heatmap[state.position]
-		logits = jnp.where(state.visited_mask == 1, -jnp.inf, logits)
+		logits = jnp.where(state.visited_mask == 1, -1e5, logits)
 		return logits
 
 
@@ -73,7 +97,7 @@ def nearest_neighbor(coordinates, position, visited_mask):
 	action: a feasible action.
 	"""
 	dists = jnp.linalg.norm(coordinates[position] - coordinates, axis=1)
-	dists_modified = jax.lax.select(visited_mask, jnp.full(visited_mask.shape, jnp.inf), dists)
+	dists_modified = jax.lax.select(visited_mask, jnp.full(visited_mask.shape, 1e5), dists)
 	action = jnp.argmin(dists_modified)
 	return action
 
@@ -94,7 +118,7 @@ def knn_graph(coordinates: jnp.array, k: int, include_coordinates:bool = False, 
 	distances = jnp.linalg.norm(coordinates[:, None] - coordinates, axis=-1)
 	if not include_self_loops:
 		diag_elements = jnp.diag_indices_from(distances)
-		distances = distances.at[diag_elements].set(jnp.inf)
+		distances = distances.at[diag_elements].set(1e5)
 	knn = jnp.argpartition(distances, kth=k, axis=-1)[:, :k]
 	# alternative to argpartition
 	# knn = jnp.argsort(distances, axis=-1)[:, :k]

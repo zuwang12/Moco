@@ -6,4 +6,11 @@ __pycache__
 !*.gitkeep
 *.egg-info
 
+*.npy
+*.csv
+*.ipynb
+
 test*
+*tmp*
+
+nohup.out

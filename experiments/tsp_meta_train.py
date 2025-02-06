@@ -52,11 +52,11 @@ if __name__ == "__main__":
     ################## config ##################
     parser = argparse.ArgumentParser()
     # TaskFamily and problem setting
-    parser.add_argument("--problem_size", type=int)
-    parser.add_argument("--task_batch_size", type=int, help="b in the paper")
+    parser.add_argument("--problem_size", type=int, default=200)
+    parser.add_argument("--task_batch_size", type=int, help="b in the paper", default=16)
     parser.add_argument("--max_length", type=int, default=50, help="Budget K in the paper") # number of steps to unroll the optimizer on the inner task
     parser.add_argument("--k", type=int, default=20)
-    parser.add_argument("--top_k", type=int, default=32)
+    parser.add_argument("--top_k", type=int, default=16)
     parser.add_argument("--heatmap_init_strategy", type=str, choices=["heuristic", "constant"], default="heuristic") # doesnt get used, the initialization is overwritten in the learned optimizer
     parser.add_argument("--rollout_actor", type=str, choices=["softmax", "entmax"], default="softmax")
     parser.add_argument("--two_opt_t_max", type=int, default=None)
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     parser.add_argument("--meta_loss_type", type=str, choices=["best", "log"], default="best")
 
     # metaTraining
-    parser.add_argument("--parallel_tasks_train", type=int)
+    parser.add_argument("--parallel_tasks_train", type=int, default=128)
     parser.add_argument("--outer_lr", type=float)
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--outer_train_steps", type=int, default=10000)
@@ -96,9 +96,9 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_folder", "-cf", help="folder to load checkpoint from", type=str, default=None)
 
     # validation and logging
-    parser.add_argument("--parallel_tasks_val", type=int)
-    parser.add_argument("--val_path", type=str)
-    parser.add_argument("--model_save_path", type=str)
+    parser.add_argument("--parallel_tasks_val", type=int, default=128)
+    parser.add_argument("--val_path", type=str, default="data/tsp/val-200-coords.npy")
+    parser.add_argument("--model_save_path", type=str, default="checkpoints/tsp200")
     parser.add_argument("--val_steps", type=int, default=200)
     parser.add_argument("--log_steps", type=int, default=1)
     parser.add_argument("--mlflow_uri", type=str, default="logs")
