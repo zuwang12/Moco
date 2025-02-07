@@ -14,6 +14,10 @@ now=$(date +"%F_%T")
 DATA_PATH="./data/tsp/test-500-coords.npy"
 testYn='N'
 
+# 로그 디렉토리 생성
+LOG_DIR="./logs/${constraint_type}"
+mkdir -p "$LOG_DIR"
+
 # 평가 스크립트 실행
 nohup python experiments/evaluate_tsp.py \
     --data_path "$DATA_PATH" \
@@ -28,4 +32,4 @@ nohup python experiments/evaluate_tsp.py \
     --k $k \
     --top_k $top_k \
     --testYn $testYn \
-    > "./logs/${constraint_type}/moco_inference_${num_cities}_${constraint_type}_${now}.log" 2>&1 &
+    > "$LOG_DIR/moco_inference_${num_cities}_${constraint_type}_${now}.log" 2>&1 &
